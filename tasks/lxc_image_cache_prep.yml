@@ -1,0 +1,89 @@
+---
+# Copyright 2015, Rackspace US, Inc.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+- name: Force image cache resolvers
+  lineinfile:
+    dest: "/var/lib/lxc/{{ item[0].name }}/rootfs/etc/resolv.conf"
+    line: "{{ item[1] }}"
+    state: present
+  with_nested:
+    - lxc_image_meta
+    - lxc_image_resolvers
+  tags:
+    - lxc-image-cache-prep
+
+# This task runs several commands against the cached image to speed up the
+# lxc_container_create playbook.
+- name: Cached image preperation script
+  copy:
+    content: |
+      #!/usr/bin/env bash
+      {% for command in item.cache_commands %}
+      {{ command }}
+      {% endfor %}
+    dest: "/var/lib/lxc/{{ item.name }}/rootfs/usr/local/cache-prep-commands.sh"
+    mode: "0755"
+  with_items: lxc_image_meta
+  when:
+    - item.cache_commands is defined
+  tags:
+    - lxc-image-cache-prep
+
+- name: Run cached image prep commands
+  command: "chroot /var/lib/lxc/{{ item.name }}/rootfs /usr/local/cache-prep-commands.sh"
+  with_items: lxc_image_meta
+  tags:
+    - lxc-image-cache-prep
+
+- name: Create apt repos in the cached container
+  template:
+    src: sources.list.j2
+    dest: "/var/lib/lxc/{{ item.name }}/rootfs/etc/apt/sources.list"
+  with_items: lxc_image_meta
+  when: item.distro == "ubuntu"
+  tags:
+    - lxc-image-cache-prep
+
+- name: Cached image package script
+  copy:
+    content: |
+      #!/usr/bin/env bash
+      {{ item.install_command }} {{ item.cache_packages | join(' ') }}
+    dest: "/var/lib/lxc/{{ item.name }}/rootfs/usr/local/cache-prep-package-update.sh"
+    mode: "0755"
+  with_items: lxc_image_meta
+  when:
+    - item.install_command is defined
+    - item.cache_packages is defined
+  tags:
+    - lxc-image-cache-prep
+
+- name: Run cached image package installs
+  command: "chroot /var/lib/lxc/{{ item.name }}/rootfs /usr/local/cache-prep-package-update.sh"
+  with_items: lxc_image_meta
+  tags:
+    - lxc-image-cache-prep
+
+- name: Adjust sshd configuration in container
+  lineinfile:
+    dest: "/var/lib/lxc/{{ item[0].name }}/rootfs/etc/ssh/sshd_config"
+    regexp: "{{ item[1].regexp }}"
+    line: "{{ item[1].line }}"
+    state: present
+  with_nested:
+    - lxc_image_meta
+    - lxc_image_sshd_configuration
+  tags:
+    - lxc-image-cache-prep

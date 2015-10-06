@@ -1,0 +1,60 @@
+---
+# Copyright 2015, Rackspace US, Inc.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+- name: Create lxc host preload meta templates
+  template:
+    src: "lxc_cache/{{ item[1] }}.j2"
+    dest: "/var/cache/lxc/download/{{ item[0].distro }}/{{ item[0].release }}/{{ item[0].arch }}/{{ item[0].name }}/{{ item[1] }}"
+  with_nested:
+   - lxc_image_meta
+   - ["config-user", "config", "create-message", "excludes-user", "expiry", "templates"]
+  tags:
+    - lxc-image-cache-host-preload
+
+- name: Create lxc host preload meta templates for image
+  template:
+    src: "lxc_cache/{{ item[1] }}.j2"
+    dest: "/var/lib/lxc/{{ item[0].name }}/meta/{{ item[1] }}"
+  with_nested:
+   - lxc_image_meta
+   - ["config-user", "config", "create-message", "excludes-user", "expiry", "templates"]
+  tags:
+    - lxc-image-cache-host-preload
+
+- name: Create lxc host preload image
+  shell: |
+    tar -Opc -C /var/lib/lxc/{{ item.name }}/rootfs . | pxz -{{ lxc_image_compression }} \
+                                                            -T{{ lxc_image_compression_threads }} \
+                                                            -D{{ lxc_image_compression_pages }} \
+                                                            -c - > rootfs.tar.xz
+  args:
+    chdir: "/var/cache/lxc/download/{{ item.distro }}/{{ item.release }}/{{ item.arch }}/{{ item.name }}"
+    creates: "/var/cache/lxc/download/{{ item.distro }}/{{ item.release }}/{{ item.arch }}/{{ item.name }}/rootfs.tar.xz"
+  with_items: lxc_image_meta
+  tags:
+    - lxc-image-cache-host-cache-create
+
+- name: Create lxc image meta
+  shell: |
+    tar -Opc -C /var/lib/lxc/{{ item.name }}/meta . | pxz -{{ lxc_image_compression }} \
+                                                          -T{{ lxc_image_compression_threads }} \
+                                                          -D{{ lxc_image_compression_pages }} \
+                                                          -c - > meta.tar.xz
+  args:
+    chdir: "/var/cache/lxc/download/{{ item.distro }}/{{ item.release }}/{{ item.arch }}/{{ item.name }}"
+    creates: "/var/cache/lxc/download/{{ item.distro }}/{{ item.release }}/{{ item.arch }}/{{ item.name }}/meta.tar.xz"
+  with_items: lxc_image_meta
+  tags:
+    - lxc-image-cache-host-cache-create
